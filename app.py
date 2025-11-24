@@ -12,16 +12,53 @@ MODEL_DIR = os.path.join(BASE_DIR, "ml_models")
 PIPELINE_BUNDLE = os.path.join(MODEL_DIR, "xgb_pipeline_rfe_top6.pkl")
 
 # ---------------- Load Pipeline ----------------
-try:
-    pipeline_bundle = joblib.load(PIPELINE_BUNDLE)
-    xgb_model = pipeline_bundle.get("model")
-    scaler = pipeline_bundle.get("scaler")
-    features = pipeline_bundle.get("features", [])
-    threshold = pipeline_bundle.get("threshold", 0.55)
-    print("✅ Pipeline loaded successfully")
-except Exception as e:
-    print("❌ Error loading pipeline:", e)
-    xgb_model, scaler, features, threshold = None, None, [], 0.55
+xgb_model, scaler, features, threshold = None, None, [], 0.55
+
+def load_pipeline():
+    global xgb_model, scaler, features, threshold
+    
+    if not os.path.exists(PIPELINE_BUNDLE):
+        print(f"❌ Model file not found at: {PIPELINE_BUNDLE}")
+        return False
+    
+    try:
+        print(f"Loading pipeline from: {PIPELINE_BUNDLE}")
+        print(f"File size: {os.path.getsize(PIPELINE_BUNDLE)} bytes")
+        
+        # Load with error handling
+        pipeline_bundle = joblib.load(PIPELINE_BUNDLE)
+        
+        # Extract components
+        xgb_model = pipeline_bundle.get("model")
+        scaler = pipeline_bundle.get("scaler")
+        features = pipeline_bundle.get("features", [])
+        threshold = pipeline_bundle.get("threshold", 0.55)
+        
+        # Validate
+        if xgb_model is None:
+            print("❌ Model not found in pipeline bundle")
+            return False
+        if scaler is None:
+            print("⚠️ Scaler not found in pipeline bundle")
+            return False
+        if not features:
+            print("⚠️ Features list is empty")
+            return False
+            
+        print(f"✅ Pipeline loaded successfully")
+        print(f"   - Model type: {type(xgb_model)}")
+        print(f"   - Features: {features}")
+        print(f"   - Threshold: {threshold}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error loading pipeline: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Load on startup
+load_pipeline()
 
 # ---------------- Helper Functions ----------------
 def apply_health_override(data, prob, threshold):
@@ -88,7 +125,11 @@ def about():
 @app.route("/predict", methods=["POST"])
 def predict():
     if xgb_model is None or scaler is None:
-        return "❌ Error: Model or pipeline not loaded.", 500
+        print("❌ Model or scaler not available")
+        return render_template(
+            "error.html",
+            error_message="❌ Error: Model or pipeline not loaded. Please contact support."
+        ), 500
 
     try:
         form = request.form
@@ -148,11 +189,13 @@ def predict():
         )
 
     except Exception as e:
-        print(f"[PREDICTION ERROR] {e}")
+        print(f"[PREDICTION ERROR] {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return render_template(
             "error.html",
             error_message="⚠️ An internal error occurred during prediction. Ensure all fields are correct."
-        )
+        ), 500
 
 # ---------------- Run App ----------------
 if __name__ == "__main__":
